@@ -10,6 +10,7 @@ Key notes:
 - Dockerfile installs minimal OS deps and Playwright Chromium to a writable path.
 - The image runs as root exclusively. No scripts call sudo, and there is no dependency on any additional user.
 - Entrypoint: The image uses an override wrapper at /app/.init/entrypoint-override.sh which ensures root-only startup and then chains to /app/.init/entrypoint.sh. Neither script invokes sudo, and both simply exec provided commands (or validation/help if none provided).
+- Diagnostics: During build, a grep scan saves matches of 'pwuser' or 'sudo' (from base layers) to /app/artifacts/diag-grep.txt for auditing.
 
 Build examples (both contexts are supported):
   # From repository root:
@@ -21,8 +22,6 @@ Run examples:
   # Interactive shell (default user: root for maximal compatibility):
   docker run --rm -it -p 8080:8080 native_application
 
-
-
   # Run tests directly:
   docker run --rm native_application npm test
 
@@ -32,4 +31,4 @@ Run examples:
 Notes:
 - No scripts, Dockerfile commands, or examples use sudo.
 - If an external CI tries to run sudo, remove sudo usage and keep the default root user. Do not rely on any non-root user at runtime.
-- Defense-in-depth in entrypoint: SUDO_* env vars are unset, and if a sudo binary is present in PATH, calls to sudo will fail with a clear error message instead of attempting to run as any non-existent user (e.g., pwuser).
+- Defense-in-depth in entrypoint: SUDO_* env vars are unset and PATH is reset to a clean minimal PATH, preventing any vendor wrappers from executing. Any base-image references to non-existent users (e.g., pwuser) are neutralized by our own ENTRYPOINT and shell.

@@ -1,1 +1,1 @@
-# placeholder to keep artifacts directory in VCS
+# Artifacts emitted during build/runtime diagnostics (e.g., diag-grep.txt)
