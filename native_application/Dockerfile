@@ -12,8 +12,8 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgtk-3-0 libgbm1 libnss3 libx11-6 libxcomposite1 libxrandr2 libxss1 libasound2 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user 'pwuser' with home dir and passwordless environment (no sudo used in image)
-# Use a fixed UID/GID for better cache/repro; 1001 is commonly free
+# Create a non-root user 'pwuser' with home dir; no sudo used in image
+# Fixed UID/GID for reproducibility
 RUN groupadd -g 1001 pwuser && useradd -m -u 1001 -g 1001 -s /bin/bash pwuser
 
 # Create app directory
@@ -29,16 +29,11 @@ RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" /home/pwuser/.npm /home/pwuser/.cache
 # Use bash for all subsequent RUN lines
 SHELL ["/bin/bash", "-c"]
 
-# Try to copy manifests whether build context is repository root or the container folder
-# 1) If context is repo root, manifests live under native_application/
-# 2) If context is native_application, manifests live at ./
-# The first COPY that matches will work; missing paths are ignored by Docker only if using wildcard.
-# We handle both explicitly with two COPY commands gated by existence checks.
-# Copy from subdir if present in build context
+# Copy manifests regardless of build context (repo root or container dir)
 COPY native-application-testing-with-playwright-43273/native_application/package.json native-application-testing-with-playwright-43273/native_application/package-lock.json* /tmp/appmanifests/ 2>/dev/null || true
 COPY package.json package-lock.json* /tmp/appmanifests/ 2>/dev/null || true
 
-# Move whichever set exists into /app
+# Move whichever set exists into /app and validate presence
 RUN set -euo pipefail; \
     if [[ -f /tmp/appmanifests/package.json ]]; then \
       mv /tmp/appmanifests/package.json /app/; \
@@ -50,7 +45,7 @@ RUN set -euo pipefail; \
       exit 1; \
     fi
 
-# Install dependencies deterministically when lockfile present, else fallback
+# Install dependencies (build stage runs as root; no sudo required)
 RUN set -euo pipefail; \
     if [[ -f package-lock.json ]]; then \
       npm ci --no-audit --no-fund; \
@@ -64,36 +59,63 @@ RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" && \
     npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium; \
     chown -R pwuser:pwuser "${PLAYWRIGHT_BROWSERS_PATH}" || true
 
-# Provide a safe env script location system-wide (optional) to avoid sed errors in setups that edit /etc/profile.d
+# Provide a safe env script location system-wide (optional)
 RUN mkdir -p /etc/profile.d && \
     touch /etc/profile.d/native_playwright_env.sh && \
     chmod 0644 /etc/profile.d/native_playwright_env.sh
 
 # Copy source code (support both contexts)
-# If building from repo root, copy only container folder. If building from container folder, copy current directory.
-# Try repo-relative path first, then fallback to .
 COPY native-application-testing-with-playwright-43273/native_application/ /app/ 2>/dev/null || true
 COPY . /app/ 2>/dev/null || true
 
 # Fix ownership for pwuser after sources are copied
 RUN chown -R pwuser:pwuser /app || true
 
-# Switch to non-root user
+# Add a safe entrypoint that never invokes sudo and works for both root and pwuser
+RUN mkdir -p /app/.init
+COPY .init/entrypoint.sh /app/.init/entrypoint.sh 2>/dev/null || true
+# If it wasn't present in build context, write a minimal one
+RUN if [[ ! -f /app/.init/entrypoint.sh ]]; then \
+      cat > /app/.init/entrypoint.sh <<'EOSH'; \
+#!/usr/bin/env bash
+set -euo pipefail
+cd /app
+
+# Source optional local env script
+if [[ -f ".init/native_playwright_env.sh" ]]; then
+  # shellcheck disable=SC1091
+  source ".init/native_playwright_env.sh" || true
+fi
+
+# Print effective user info (debug aid)
+echo "Entrypoint: running as user: $(id -u) (uid) / $(id -un) (name)"
+
+# Default behavior: if a command is provided, exec it; else show help
+if [[ $# -gt 0 ]]; then
+  exec "$@"
+else
+  if [[ -x ".init/validation.sh" ]]; then
+    exec ./.init/validation.sh
+  else
+    echo "Container ready. Common commands:"
+    echo "  npm start   # serve static files on :8080"
+    echo "  npm test    # run Playwright tests"
+    exec bash
+  fi
+fi
+EOSH
+      chmod +x /app/.init/entrypoint.sh; \
+    fi
+
+# Switch to non-root user for runtime
 USER pwuser
 
 # Ensure working directory remains /app for pwuser
 WORKDIR /app
 
-# Source local env script at build-time where possible (no-op if missing)
-RUN if [[ -f ".init/native_playwright_env.sh" ]]; then echo "Sourcing local env script for verification"; bash -lc "source .init/native_playwright_env.sh >/dev/null 2>&1 || true"; fi
-
 # Expose the tiny app port used by http-server
 EXPOSE 8080
 
-# Default command runs the validation script if present; else print help
-CMD if [[ -x ".init/validation.sh" ]]; then \
-      ./.init/validation.sh; \
-    else \
-      echo "Container ready. To run tests: npm test"; \
-      bash; \
-    fi
+# Use safe entrypoint and default to no-op help; never call sudo
+ENTRYPOINT ["/app/.init/entrypoint.sh"]
+CMD []

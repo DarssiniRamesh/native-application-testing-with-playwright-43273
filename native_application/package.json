@@ -4,14 +4,14 @@
   "private": true,
   "description": "Minimal Node + Playwright project for native application testing container",
   "scripts": {
+    "//": "No scripts here should use sudo; container runs as non-root at runtime.",
     "preinstall": "node -e \"try{require('fs').mkdirSync('.init',{recursive:true});require('fs').mkdirSync('artifacts',{recursive:true})}catch(e){}\"",
     "start": "http-server -p 8080 -c-1 .",
     "install": "playwright install --with-deps || npx playwright install --with-deps",
     "test": "playwright test --reporter=line",
     "test:headed": "PLAYWRIGHT_HEADLESS=0 playwright test --headed --reporter=line",
     "pw:install": "playwright install chromium || npx playwright install chromium",
-    "pw:install-deps": "playwright install-deps || true",
-    "ci:install": "node .init/validation-install.js"
+    "pw:install-deps": "playwright install-deps || true"
   },
   "dependencies": {
     "@playwright/test": "^1.47.0",
