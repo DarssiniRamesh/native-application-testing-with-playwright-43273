@@ -10,3 +10,5 @@ node app.js >"$APP_LOG" 2>&1 &
 echo $! > "$ART/native_app.pid"
 # give caller the log path and pid
 echo "$APP_LOG"
+# ensure file is executable in git-agnostic environments (harmless no-op if already exec)
+chmod +x ".init/start.sh" ".init/stop.sh" ".init/test.sh" ".init/validation.sh" || true
