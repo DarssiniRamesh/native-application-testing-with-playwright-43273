@@ -45,7 +45,11 @@ RUN set -euo pipefail; \
     fi
 
 # Install dependencies (build stage runs as root; no sudo required)
+# Build-time logging: verify effective user and sudo presence to ensure no pwuser/sudo is expected
 RUN set -euo pipefail; \
+    echo "[build-log] Effective user: $(id -un) (uid: $(id -u)) HOME=${HOME:-}"; \
+    echo "[build-log] PATH=${PATH}"; \
+    if command -v sudo >/dev/null 2>&1; then echo "[build-log] sudo present in base image at $(command -v sudo)"; else echo "[build-log] sudo not present (expected)"; fi; \
     if [[ -f package-lock.json ]]; then \
       npm ci --no-audit --no-fund; \
     else \
@@ -74,6 +78,18 @@ RUN if [[ ! -f /app/.init/entrypoint.sh ]]; then \
 #!/usr/bin/env bash
 set -euo pipefail
 cd /app
+
+# Defense-in-depth: explicitly unset any SUDO_* variables injected by outer systems
+unset SUDO_USER SUDO_COMMAND SUDO_UID SUDO_GID || true
+
+# Defense-in-depth: if sudo exists in PATH, alias it to a function that errors out clearly.
+if command -v sudo >/dev/null 2>&1; then
+  sudo() {
+    echo "ERROR: sudo must not be used in this container. The image runs as root-only." >&2
+    return 99
+  }
+  export -f sudo || true
+fi
 
 # Source optional local env script
 if [[ -f ".init/native_playwright_env.sh" ]]; then
@@ -108,6 +124,16 @@ EOSH
     fi
 # Ensure entrypoint is executable if present
 RUN if [[ -f /app/.init/entrypoint.sh ]]; then chmod +x /app/.init/entrypoint.sh; fi
+
+# Also provide a minimal override entrypoint to short-circuit any external wrapper from base image layers
+RUN cat > /app/.init/entrypoint-override.sh <<'EOSH' && chmod +x /app/.init/entrypoint-override.sh
+#!/usr/bin/env bash
+set -euo pipefail
+export HOME="/root"
+echo "Override Entrypoint: uid=$(id -u) user=$(id -un) (root-only). No sudo is permitted."
+exec /app/.init/entrypoint.sh "$@"
+EOSH
+
 # Force container to run as root
 USER root
 
@@ -117,7 +143,7 @@ WORKDIR /app
 # Expose the tiny app port used by http-server
 EXPOSE 8080
 
-# Use safe entrypoint and default to no-op help; never call sudo
-ENTRYPOINT ["/app/.init/entrypoint.sh"]
+# Use override entrypoint that guarantees root-only execution and never calls sudo
+ENTRYPOINT ["/app/.init/entrypoint-override.sh"]
 # Default to showing validation/help; explicit commands can be provided at docker run
 CMD []
