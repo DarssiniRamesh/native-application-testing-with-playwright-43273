@@ -119,4 +119,5 @@ EXPOSE 8080
 
 # Use safe entrypoint and default to no-op help; never call sudo
 ENTRYPOINT ["/app/.init/entrypoint.sh"]
+# Default to showing validation/help; explicit commands can be provided at docker run
 CMD []
