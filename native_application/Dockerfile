@@ -12,9 +12,11 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgtk-3-0 libgbm1 libnss3 libx11-6 libxcomposite1 libxrandr2 libxss1 libasound2 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user 'pwuser' with home dir; no sudo used in image
-# Fixed UID/GID for reproducibility
-RUN groupadd -g 1001 pwuser && useradd -m -u 1001 -g 1001 -s /bin/bash pwuser
+# Optionally create a non-root user 'pwuser' deterministically; avoid hard runtime requirement.
+# Fixed UID/GID for reproducibility; do not fail if already exists.
+RUN set -eux; \
+    if ! getent group pwuser >/dev/null; then groupadd -g 1001 pwuser || true; fi; \
+    if ! id -u pwuser >/dev/null 2>&1; then useradd -m -u 1001 -g 1001 -s /bin/bash pwuser || true; fi
 
 # Create app directory
 WORKDIR /app
@@ -87,8 +89,25 @@ if [[ -f ".init/native_playwright_env.sh" ]]; then
   source ".init/native_playwright_env.sh" || true
 fi
 
+# If running as root and pwuser exists, ensure /app ownership is relaxed for both users
+if [[ "$(id -u)" -eq 0 ]]; then
+  if id -u pwuser >/dev/null 2>&1; then
+    chown -R pwuser:pwuser /app || true
+    export HOME="/home/pwuser"
+  else
+    export HOME="/root"
+  fi
+else
+  # Non-root: set HOME to current user's home if available
+  export HOME="${HOME:-/tmp}"
+fi
+
+# Ensure playwright/browser cache dirs exist and are writable
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/app/.local-browsers}"
+mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" /app/artifacts || true
+
 # Print effective user info (debug aid)
-echo "Entrypoint: running as user: $(id -u) (uid) / $(id -un) (name)"
+echo "Entrypoint: running as uid=$(id -u) user=$(id -un) home=${HOME}"
 
 # Default behavior: if a command is provided, exec it; else show help
 if [[ $# -gt 0 ]]; then
@@ -107,8 +126,9 @@ EOSH
       chmod +x /app/.init/entrypoint.sh; \
     fi
 
-# Switch to non-root user for runtime
-USER pwuser
+# Default to root at runtime to avoid failures when external tools inject 'sudo' or assume root.
+# You can run with a non-root user by adding: docker run --user 1001:1001 ...
+USER root
 
 # Ensure working directory remains /app for pwuser
 WORKDIR /app
