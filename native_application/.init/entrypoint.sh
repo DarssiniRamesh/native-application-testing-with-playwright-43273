@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PUBLIC_INTERFACE
-# Safe entrypoint that never uses sudo. Runs as pwuser by default.
+# Safe entrypoint that never uses sudo. Runs as root.
 set -euo pipefail
 
 cd /app
@@ -11,7 +11,10 @@ if [[ -f ".init/native_playwright_env.sh" ]]; then
   source ".init/native_playwright_env.sh" || true
 fi
 
-echo "Entrypoint: running as user: $(id -u) (uid) / $(id -un) (name)"
+# Running as root only; set HOME accordingly
+export HOME="/root"
+
+echo "Entrypoint: running as user: $(id -u) (uid) / $(id -un) (name) home=${HOME}"
 
 # If command given, exec it; else run validation or provide help
 if [[ $# -gt 0 ]]; then

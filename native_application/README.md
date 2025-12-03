@@ -8,8 +8,8 @@ Key notes:
   - npm test -> playwright test
 - .init/native_playwright_env.sh sets safe environment variables and is sourced by the helper scripts (optional).
 - Dockerfile installs minimal OS deps and Playwright Chromium to a writable path.
-- The image creates an optional non-root user 'pwuser' (uid/gid 1001) for environments that need it. By default the container runs as root to avoid failures when external tooling injects 'sudo' or assumes root. No scripts call sudo.
-- Entrypoint: /app/.init/entrypoint.sh which never invokes sudo and simply execs provided commands (or validation/help if none provided). It defensively adjusts permissions if running as root.
+- The image runs as root exclusively. No scripts call sudo, and there is no dependency on any additional user.
+- Entrypoint: /app/.init/entrypoint.sh which never invokes sudo and simply execs provided commands (or validation/help if none provided).
 
 Build examples (both contexts are supported):
   # From repository root:
@@ -21,8 +21,7 @@ Run examples:
   # Interactive shell (default user: root for maximal compatibility):
   docker run --rm -it -p 8080:8080 native_application
 
-  # Run as non-root pwuser (uid/gid 1001) if your CI requires:
-  docker run --rm -it -p 8080:8080 --user 1001:1001 native_application
+
 
   # Run tests directly:
   docker run --rm native_application npm test
