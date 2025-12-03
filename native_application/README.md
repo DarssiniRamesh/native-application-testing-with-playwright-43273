@@ -9,8 +9,11 @@ Key notes:
 - .init/native_playwright_env.sh sets safe environment variables and is sourced by the helper scripts.
 - Dockerfile installs minimal OS deps and Playwright Chromium to a writable path.
 
-Build example:
-  docker build -t native_application .
+Build examples (both contexts are supported):
+  # From repository root:
+  docker build -f native-application-testing-with-playwright-43273/native_application/Dockerfile -t native_application .
+  # Or from container folder:
+  cd native-application-testing-with-playwright-43273/native_application && docker build -t native_application .
 
 Run example:
   docker run --rm -p 8080:8080 native_application

@@ -1,41 +1,27 @@
 #!/usr/bin/env bash
-set -euo pipefail
 # PUBLIC_INTERFACE
-# This script validates that npm can install dependencies even if no lockfile exists,
-# logs to artifacts/install.log, performs Playwright browser install, and then runs tests.
+# This script validates that node dependencies and Playwright are installed.
+# It runs inside the container at runtime by default CMD.
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-mkdir -p artifacts
-LOG="artifacts/install.log"
+echo "[validation] Node version: $(node -v)"
+echo "[validation] NPM version: $(npm -v)"
 
-echo "$(date -Iseconds) starting validation" | tee -a "$LOG"
-
-# Prefer npm ci when lock exists, else npm install to avoid ENOENT
 if [[ -f package-lock.json ]]; then
-  echo "Using npm ci..." | tee -a "$LOG"
-  if ! npm ci --no-audit --no-fund >>"$LOG" 2>&1; then
-    echo "npm ci failed, see $LOG" | tee -a "$LOG"
-    echo "Proxy guidance: set HTTP_PROXY/HTTPS_PROXY or npm config proxy if behind corporate proxy." | tee -a "$LOG"
-    exit 1
-  fi
+  echo "[validation] Installing dependencies via npm ci"
+  npm ci --no-audit --no-fund
+elif [[ -f package.json ]]; then
+  echo "[validation] Installing dependencies via npm install"
+  npm install --no-audit --no-fund
 else
-  echo "No package-lock.json found. Falling back to npm install..." | tee -a "$LOG"
-  if ! npm install --no-audit --no-fund >>"$LOG" 2>&1; then
-    echo "npm install failed, see $LOG" | tee -a "$LOG"
-    echo "Proxy guidance: set HTTP_PROXY/HTTPS_PROXY or npm config proxy if behind corporate proxy." | tee -a "$LOG"
-    exit 1
-  fi
+  echo "[validation] ERROR: package.json not found in /app"
+  exit 1
 fi
 
-# Install Playwright browsers
-if ! npx --yes playwright install --with-deps >>"$LOG" 2>&1; then
-  echo "playwright install --with-deps failed; retrying without deps" | tee -a "$LOG"
-  if ! npx --yes playwright install >>"$LOG" 2>&1; then
-    echo "playwright install failed, see $LOG" | tee -a "$LOG"
-    exit 1
-  fi
-fi
+echo "[validation] Ensuring Playwright Chromium is installed"
+npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium
 
-echo "Validation completed successfully" | tee -a "$LOG"
+echo "[validation] Success. You can now run: npm test"
 exit 0
