@@ -9,6 +9,18 @@ set -euo pipefail
 
 cd /app
 
+# Defense-in-depth: explicitly unset any SUDO_* variables injected by outer systems
+unset SUDO_USER SUDO_COMMAND SUDO_UID SUDO_GID || true
+
+# Defense-in-depth: if sudo exists in PATH, alias it to a function that errors out clearly.
+if command -v sudo >/dev/null 2>&1; then
+  sudo() {
+    echo "ERROR: sudo must not be used in this container. The image runs as root-only." >&2
+    return 99
+  }
+  export -f sudo || true
+fi
+
 # Optional environment script (never required)
 if [[ -f ".init/native_playwright_env.sh" ]]; then
   # shellcheck disable=SC1091

@@ -32,3 +32,4 @@ Run examples:
 Notes:
 - No scripts, Dockerfile commands, or examples use sudo.
 - If an external CI tries to run sudo, remove sudo usage and keep the default root user. Do not rely on any non-root user at runtime.
+- Defense-in-depth in entrypoint: SUDO_* env vars are unset, and if a sudo binary is present in PATH, calls to sudo will fail with a clear error message instead of attempting to run as any non-existent user (e.g., pwuser).
