@@ -30,7 +30,7 @@ fi
 # Running as root only; set HOME accordingly
 export HOME="/root"
 
-echo "Entrypoint: running as uid=$(id -u) user=$(id -un) home=${HOME}"
+echo "[start-log] Entrypoint: running as uid=$(id -u) user=$(id -un) home=${HOME} Marker=NO-SUDO-NO-PWUSER"
 
 # Ensure this script is executable (defensive when bind-mounted)
 chmod +x "/app/.init/entrypoint.sh" || true

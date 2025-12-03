@@ -9,7 +9,7 @@ Key notes:
 - .init/native_playwright_env.sh sets safe environment variables and is sourced by the helper scripts (optional).
 - Dockerfile installs minimal OS deps and Playwright Chromium to a writable path.
 - The image runs as root exclusively. No scripts call sudo, and there is no dependency on any additional user.
-- Entrypoint: /app/.init/entrypoint.sh which never invokes sudo and simply execs provided commands (or validation/help if none provided).
+- Entrypoint: The image uses an override wrapper at /app/.init/entrypoint-override.sh which ensures root-only startup and then chains to /app/.init/entrypoint.sh. Neither script invokes sudo, and both simply exec provided commands (or validation/help if none provided).
 
 Build examples (both contexts are supported):
   # From repository root:

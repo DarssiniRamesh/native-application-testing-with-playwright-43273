@@ -12,7 +12,7 @@ echo "[start-log] Effective user: $(id -un) (uid: $(id -u)) HOME=${HOME:-/root}"
 if command -v sudo >/dev/null 2>&1; then
   echo "[start-log] Note: sudo binary present in PATH at $(command -v sudo), but it must not be used."
 else
-  echo "[start-log] sudo not present (expected)."
+  echo "[start-log] sudo not present (expected). Marker=NO-SUDO-NO-PWUSER"
 fi
 
 # Exit success; caller may exec shell or run tests next
