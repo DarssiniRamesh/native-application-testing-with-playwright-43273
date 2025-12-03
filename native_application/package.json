@@ -1,0 +1,22 @@
+{
+  "name": "native_application",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Node + Playwright project for native application testing container",
+  "scripts": {
+    "preinstall": "node -e \"try{require('fs').mkdirSync('.init',{recursive:true})}catch(e){}\"",
+    "start": "http-server -p 8080 -c-1 .",
+    "test": "playwright test",
+    "test:headed": "PLAYWRIGHT_HEADLESS=0 playwright test --headed",
+    "pw:install": "playwright install chromium",
+    "pw:install-deps": "playwright install-deps || true"
+  },
+  "dependencies": {
+    "http-server": "^14.1.1",
+    "@playwright/test": "^1.48.2"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

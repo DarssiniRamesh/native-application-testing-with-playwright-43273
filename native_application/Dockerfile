@@ -38,8 +38,16 @@ RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" && \
       npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium; \
     fi
 
+# Provide a safe env script location system-wide (optional) to avoid sed errors in setups that edit /etc/profile.d
+RUN mkdir -p /etc/profile.d && \
+    touch /etc/profile.d/native_playwright_env.sh && \
+    chmod 0644 /etc/profile.d/native_playwright_env.sh
+
 # Copy source code (if present)
 COPY . .
+
+# Source local env script at build-time where possible (no-op if missing)
+RUN if [[ -f ".init/native_playwright_env.sh" ]]; then echo "Sourcing local env script for verification"; bash -lc "source .init/native_playwright_env.sh >/dev/null 2>&1 || true"; fi
 
 # Expose the tiny app port
 EXPOSE 3000

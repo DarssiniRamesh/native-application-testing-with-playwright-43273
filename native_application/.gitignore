@@ -1,0 +1,7 @@
+node_modules/
+.playwright/
+.cache/
+.tmp/
+dist/
+npm-debug.log*
+/app/.local-browsers/

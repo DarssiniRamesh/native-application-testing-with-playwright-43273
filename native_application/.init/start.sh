@@ -2,10 +2,23 @@
 set -euo pipefail
 WS="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
 cd "$WS"
+
+# Source local env if present to ensure PATH augmentation
+if [[ -f ".init/native_playwright_env.sh" ]]; then
+  # shellcheck disable=SC1091
+  source ".init/native_playwright_env.sh"
+fi
+
 # start http-server as pwuser in a new session, capture logs
+if ! grep -q '"start"' package.json 2>/dev/null; then
+  echo "ERROR: package.json missing start script" >&2
+  exit 25
+fi
 sudo -u pwuser bash -lc "cd '$WS' && mkdir -p /tmp && setsid npm run start > /tmp/http-server.log 2>&1 &"
+
 # small delay to let process appear
 sleep 1
+
 # robustly find PID for http-server -p 8080 owned by pwuser
 SERVER_PID="$(pgrep -u pwuser -f "http-server -p 8080" | head -n1 || true)"
 if [ -z "${SERVER_PID:-}" ]; then
@@ -22,6 +35,7 @@ if [ "$OWNER" != "pwuser" ]; then
   echo "ERROR: server pid $SERVER_PID not owned by pwuser (owner=$OWNER)" >&2
   exit 32
 fi
+
 # export PID for callers
 echo "$SERVER_PID" > /tmp/http-server.pid
 echo "STARTED: pid=$SERVER_PID"
