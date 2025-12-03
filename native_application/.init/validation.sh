@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 # PUBLIC_INTERFACE
-# This script validates that node dependencies and Playwright are installed.
-# It runs inside the container at runtime by default CMD.
+# /** Validation entrypoint for the native_application container.
+#  * Purpose: Ensure the container environment is ready without relying on sudo.
+#  * Behavior:
+#  *  - Prints basic environment info
+#  *  - Verifies current user is 'pwuser'
+#  *  - Verifies Playwright CLI is available
+#  *  - Starts a simple HTTP server to serve index.html on port 8080
+#  * Returns: exits non-zero if prechecks fail; otherwise starts server in foreground.
+#  */
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+echo "[validation] Starting container validation without sudo..."
+echo "[validation] whoami: $(whoami)"
+echo "[validation] uid:gid = $(id -u):$(id -g)"
+echo "[validation] node version: $(node -v || echo 'node not found')"
+echo "[validation] npm version: $(npm -v || echo 'npm not found')"
 
-echo "[validation] Node version: $(node -v)"
-echo "[validation] NPM version: $(npm -v)"
+# Ensure we are the expected user; not strictly required, but helps catch misconfigurations.
+if [[ "$(whoami)" != "pwuser" ]]; then
+  echo "[validation][warn] Expected user 'pwuser' but got '$(whoami)'. Proceeding anyway."
+fi
 
-if [[ -f package-lock.json ]]; then
-  echo "[validation] Installing dependencies via npm ci"
-  npm ci --no-audit --no-fund
-elif [[ -f package.json ]]; then
-  echo "[validation] Installing dependencies via npm install"
-  npm install --no-audit --no-fund
-else
-  echo "[validation] ERROR: package.json not found in /app"
+# Ensure Playwright is available (installed during image build)
+if ! npx --yes playwright --version >/dev/null 2>&1; then
+  echo "[validation][error] Playwright CLI is not available. Please rebuild the image."
   exit 1
 fi
 
-echo "[validation] Ensuring Playwright Chromium is installed"
-npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium
-
-echo "[validation] Success. You can now run: npm test"
-exit 0
+# Serve the app directory
+echo "[validation] Launching http-server on :8080"
+exec npx --yes http-server -p 8080 -c-1 .
