@@ -4,7 +4,7 @@
   "private": true,
   "description": "Minimal Node + Playwright project for native application testing container",
   "scripts": {
-    "//": "No scripts here should use sudo; container runs as non-root at runtime.",
+    "//": "No scripts here should use sudo; container runs as root-only at runtime.",
     "preinstall": "node -e \"try{require('fs').mkdirSync('.init',{recursive:true});require('fs').mkdirSync('artifacts',{recursive:true})}catch(e){}\"",
     "start": "http-server -p 8080 -c-1 .",
     "install": "playwright install --with-deps || npx playwright install --with-deps",

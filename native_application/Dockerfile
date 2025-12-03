@@ -47,6 +47,7 @@ RUN set -euo pipefail; \
 # Install dependencies (build stage runs as root; no sudo required)
 # Build-time logging: verify effective user and sudo presence to ensure no pwuser/sudo is expected
 RUN set -euo pipefail; \
+    echo "[build-log] START: effective user check (should be root). Marker=NO-SUDO-NO-PWUSER"; \
     echo "[build-log] Effective user: $(id -un) (uid: $(id -u)) HOME=${HOME:-}"; \
     echo "[build-log] PATH=${PATH}"; \
     if command -v sudo >/dev/null 2>&1; then echo "[build-log] sudo present in base image at $(command -v sudo)"; else echo "[build-log] sudo not present (expected)"; fi; \
@@ -54,7 +55,8 @@ RUN set -euo pipefail; \
       npm ci --no-audit --no-fund; \
     else \
       npm install --no-audit --no-fund; \
-    fi
+    fi; \
+    echo "[build-log] COMPLETE: dependency install finished. Marker=NO-SUDO-NO-PWUSER"
 
 # Ensure playwright is available and install chromium to a writable path
 RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" && \
@@ -68,6 +70,8 @@ RUN mkdir -p /etc/profile.d && \
 # Copy source code (support both contexts)
 COPY native-application-testing-with-playwright-43273/native_application/ /app/ 2>/dev/null || true
 COPY . /app/ 2>/dev/null || true
+# Ensure validation script is executable if present
+RUN if [[ -f /app/.init/validation.sh ]]; then chmod +x /app/.init/validation.sh; fi
 
 # Add a safe entrypoint that never invokes sudo and runs as root
 RUN mkdir -p /app/.init
@@ -105,7 +109,7 @@ export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/app/.local-browser
 mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" /app/artifacts || true
 
 # Print effective user info (debug aid)
-echo "Entrypoint: running as uid=$(id -u) user=$(id -un) home=${HOME}"
+echo "[start-log] Entrypoint: running as uid=$(id -u) user=$(id -un) home=${HOME} Marker=NO-SUDO-NO-PWUSER"
 
 # Default behavior: if a command is provided, exec it; else show help
 if [[ $# -gt 0 ]]; then
@@ -130,7 +134,7 @@ RUN cat > /app/.init/entrypoint-override.sh <<'EOSH' && chmod +x /app/.init/entr
 #!/usr/bin/env bash
 set -euo pipefail
 export HOME="/root"
-echo "Override Entrypoint: uid=$(id -u) user=$(id -un) (root-only). No sudo is permitted."
+echo "[start-log] Override Entrypoint: uid=$(id -u) user=$(id -un) (root-only). Marker=NO-SUDO-NO-PWUSER"
 exec /app/.init/entrypoint.sh "$@"
 EOSH
 
