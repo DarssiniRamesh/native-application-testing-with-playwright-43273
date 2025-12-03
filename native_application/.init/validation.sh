@@ -1,44 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WORKSPACE="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
-cd "$WORKSPACE"
-ART="$WORKSPACE/artifacts"
-mkdir -p "$ART"
-# orchestrate: start app, healthcheck, test, stop, summary
-START_SCRIPT=".init/start.sh"
-STOP_SCRIPT=".init/stop.sh"
-TEST_SCRIPT=".init/test.sh"
-# Run start and capture app log path
-APP_LOG=$($START_SCRIPT)
-# read PID
-PIDFILE="$ART/native_app.pid"
-if [ -f "$PIDFILE" ]; then APP_PID=$(cat "$PIDFILE"); else echo "no pidfile after start" >&2; exit 11; fi
-# health check (up to 30s)
-for i in {1..60}; do curl -sSf http://127.0.0.1:3000/ >/dev/null && break || sleep 0.5; done
-if ! curl -sSf http://127.0.0.1:3000/ >/dev/null; then
-echo "app failed health check" >&2
-tail -n 200 "$APP_LOG" >&2
-$STOP_SCRIPT || true
-exit 10
+WS="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
+cd "$WS"
+# build (install deps)
+if [ -f package-lock.json ]; then
+  sudo -u pwuser bash -lc "cd '$WS' && npm ci --no-audit --progress=false"
+else
+  sudo -u pwuser bash -lc "cd '$WS' && npm i --no-audit --progress=false"
 fi
-# export env explicitly for test run
-export PLAYWRIGHT_HEADLESS=1
-export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$WORKSPACE/.local-browsers}"
+# start server
+bash .init/start.sh
+SERVER_PID="$(cat /tmp/http-server.pid || true)"
+if [ -z "$SERVER_PID" ]; then
+  echo "VALIDATION: failed to start server" >&2
+  exit 30
+fi
+# readiness check: retry up to 30s
+READY=1
+for i in $(seq 1 30); do
+  if sudo -u pwuser bash -lc "curl -sfS --max-time 2 http://127.0.0.1:8080 >/dev/null"; then
+    READY=0 && break
+  fi
+  sleep 1
+done
+if [ "$READY" -ne 0 ]; then
+  echo "VALIDATION: http-server not ready after timeout" >&2
+  tail -n 200 /tmp/http-server.log || true
+  bash .init/stop.sh || true
+  exit 33
+fi
 # run tests
-TEST_RC=0
-$TEST_SCRIPT || TEST_RC=$?
-# stop app
-$STOP_SCRIPT || true
-# ensure app log path variable populated
-APP_LOG_PATH="$APP_LOG"
-# write summary
-cat >"$ART/summary.txt" <<EOF
-artifacts:
-- install log: $ART/install.log
-- playwright install log: $ART/playwright_install.log
-- playwright test log: $ART/playwright_validation.log
-- app log: $APP_LOG_PATH
-test_exit_code=$TEST_RC
-EOF
-cat "$ART/summary.txt"
-exit "$TEST_RC"
+bash .init/test.sh
+TEST_RC=$?
+# stop server
+bash .init/stop.sh || true
+# evidence
+echo "VALIDATION: test exit code=$TEST_RC"
+if [ "$TEST_RC" -eq 0 ]; then
+  echo "VALIDATION: SUCCESS"
+  exit 0
+else
+  echo "VALIDATION: FAILURE - see /tmp/http-server.log and /tmp/playwright.test.rc and Playwright output" >&2
+  tail -n 200 /tmp/http-server.log || true
+  exit 40
+fi

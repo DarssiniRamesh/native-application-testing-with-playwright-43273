@@ -1,39 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WORKSPACE="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
-cd "$WORKSPACE"
-ART="$WORKSPACE/artifacts"
-mkdir -p "$ART"
-LOG="$ART/install.log"
-# Ensure PLAYWRIGHT_BROWSERS_PATH persisted and owned
-PLAYWRIGHT_BROWSERS_PATH="${WORKSPACE}/.local-browsers"
-export PLAYWRIGHT_BROWSERS_PATH
-mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
-# Ensure ownership for current user (sudo allowed in container)
-sudo chown -R "$(id -u):$(id -g)" "$PLAYWRIGHT_BROWSERS_PATH" || true
-# Persist env in /etc/profile.d idempotently
-sudo sed -i '/PLAYWRIGHT_BROWSERS_PATH/d' /etc/profile.d/native_playwright_env.sh || true
-sudo tee -a /etc/profile.d/native_playwright_env.sh > /dev/null <<EOF
-export PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH"
-EOF
-sudo chmod 644 /etc/profile.d/native_playwright_env.sh
-# Deterministic npm install: prefer npm ci when lockfile exists
-if [ -f package-lock.json ]; then
-  # If node_modules exists from prior non-lockfile install, remove to avoid conflicts
-  if [ -d node_modules ] && [ ! -f .npm_ci_succeeded ]; then rm -rf node_modules || true; fi
-  npm ci --no-audit --no-fund >"$LOG" 2>&1 || { echo "npm ci failed, see $LOG. If behind proxy set HTTP_PROXY/HTTPS_PROXY or HTTP_PROXY/HTTPS_PROXY_AUTH. Consider running: npm cache clean --force" >&2; tail -n 200 "$LOG" >&2; exit 5; }
-  touch .npm_ci_succeeded || true
+WS="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
+PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-"$WS/.cache/playwright-browsers"}
+# prefer npm ci if lockfile present, run as pwuser
+if [ -f "$WS/package-lock.json" ]; then
+  sudo -u pwuser bash -lc "cd '$WS' && npm ci --no-audit --progress=false"
 else
-  npm i --no-audit --no-fund >"$LOG" 2>&1 || { echo "npm install failed, see $LOG" >&2; tail -n 200 "$LOG" >&2; exit 6; }
+  sudo -u pwuser bash -lc "cd '$WS' && npm i --no-audit --progress=false"
 fi
-# Ensure playwright CLI exists locally
-if [ ! -x ./node_modules/.bin/playwright ]; then
-  echo "playwright CLI missing locally; ensure package.json includes 'playwright' or 'playwright-core' and run npm install" >"$ART/playwright_cli_missing.txt"
-  exit 7
+# ensure playwright declared in devDependencies
+sudo -u pwuser bash -lc "cd '$WS' && node -e 'const p=require(\"./package.json\"); if(!(p.devDependencies&&p.devDependencies.playwright)||(typeof p.devDependencies.playwright!==\"string\")) { console.error(\"playwright not declared in devDependencies\"); process.exit(2)}'"
+# create cache path and ensure ownership
+sudo -u pwuser bash -lc "mkdir -p '$PLAYWRIGHT_BROWSERS_PATH'"
+sudo chown -R pwuser:pwuser "$PLAYWRIGHT_BROWSERS_PATH"
+# install chromium binary via Playwright with retries
+RETRIES=3
+for i in $(seq 1 $RETRIES); do
+  if sudo -u pwuser bash -lc "cd '$WS' && PLAYWRIGHT_BROWSERS_PATH='$PLAYWRIGHT_BROWSERS_PATH' npx --yes playwright install chromium"; then
+    break
+  fi
+  sleep $((i*2))
+  if [ "$i" -eq "$RETRIES" ]; then
+    echo "playwright browser install failed after $RETRIES attempts" >&2
+    exit 20
+  fi
+done
+# verify installation via playwright show-brief or presence of chromium directory
+if ! sudo -u pwuser bash -lc "cd '$WS' && PLAYWRIGHT_BROWSERS_PATH='$PLAYWRIGHT_BROWSERS_PATH' npx --yes playwright show-brief | grep -i chromium >/dev/null 2>&1"; then
+  if ! sudo -u pwuser bash -lc "ls '$PLAYWRIGHT_BROWSERS_PATH' 2>/dev/null | grep -i chromium >/dev/null 2>&1"; then
+    echo "Chromium browser not found in PLAYWRIGHT_BROWSERS_PATH" >&2
+    exit 21
+  fi
 fi
-# Install Chromium explicitly and capture logs
-PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" ./node_modules/.bin/playwright install chromium >"$ART/playwright_install.log" 2>&1 || { echo "playwright install failed, see $ART/playwright_install.log" >&2; tail -n 200 "$ART/playwright_install.log" >&2; exit 8; }
-# Validate Chromium via Playwright Node API
-node -e "(async()=>{try{const pw=require('playwright');const exe=pw.chromium.executablePath();console.log(exe||'');process.exit(exe?0:11);}catch(e){console.error(e);process.exit(12);}})()" >"$ART/chrome_check.txt" 2>&1 || { echo "Chromium validation failed, see $ART/chrome_check.txt" >&2; tail -n 200 "$ART/chrome_check.txt" >&2; exit 9; }
-# Record playwright version
-./node_modules/.bin/playwright --version >"$ART/playwright_version.txt" 2>&1 || true
+# ensure workspace ownership and report playwright version
+sudo chown -R pwuser:pwuser "$WS"
+sudo -u pwuser bash -lc "cd '$WS' && npx --yes playwright --version"

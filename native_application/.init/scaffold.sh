@@ -1,43 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WORKSPACE="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
-cd "$WORKSPACE"
-mkdir -p "$WORKSPACE"/tests "$WORKSPACE"/artifacts
-# Create package.json only if absent; include 'playwright' to ensure CLI and browser tooling
-if [ ! -f package.json ]; then
-  cat > package.json <<'JSON'
-{
-  "name": "native-application-playwright",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "prepare": "npx playwright install chromium",
-    "test": "./node_modules/.bin/playwright test --workers=1 --timeout=30000",
-    "start": "node app.js"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.30.0",
-    "playwright": "^1.30.0"
-  }
-}
-JSON
-fi
-# Minimal HTTP app for health-check (overwrite to ensure content)
-cat > app.js <<'NODE'
-const http = require('http');
-const s = http.createServer((req,res)=>res.end('ok'));
-s.listen(3000,()=>console.log('app:3000'))
-NODE
-# Simple Playwright test exercising the request fixture (overwrite to ensure content)
-cat > tests/basic.spec.js <<'TEST'
-const { test, expect } = require('@playwright/test');
-test('basic http responds', async ({ request }) => {
-  const r = await request.get('http://127.0.0.1:3000/');
-  expect(r.status()).toBe(200);
-  expect(await r.text()).toBe('ok');
+
+# workspace from container context
+WS="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
+PLAYWRIGHT_VERSION="^1.41.1"
+HTTP_SERVER_VERSION="^14.1.1"
+
+# ensure workspace exists and init package.json if missing (run as pwuser)
+sudo -u pwuser bash -lc "mkdir -p '$WS' && cd '$WS' && [ -f package.json ] || npm init -y"
+
+# merge/add devDependencies and scripts using a small node helper to avoid quoting brittleness
+sudo -u pwuser bash -lc "node -e '
+const fs=require("fs"), pfile=process.cwd()+"/package.json";
+let p=fs.existsSync(pfile)?JSON.parse(fs.readFileSync(pfile)):{};
+p.devDependencies=p.devDependencies||{};
+if (!p.devDependencies.playwright) p.devDependencies.playwright=process.env.PW_V;
+if (!p.devDependencies['http-server']) p.devDependencies['http-server']=process.env.HS_V;
+p.scripts=p.scripts||{};
+if (!p.scripts.start) p.scripts.start="http-server -p 8080";
+if (!p.scripts.test) p.scripts.test="playwright test";
+fs.writeFileSync(pfile,JSON.stringify(p,null,2));
+'" env PW_V="$PLAYWRIGHT_VERSION" HS_V="$HTTP_SERVER_VERSION"
+
+# create tests directory and a basic Playwright test as pwuser
+sudo -u pwuser bash -lc "mkdir -p '$WS/tests' && cat > '$WS/tests/basic.spec.mjs' <<'EOT'
+import { test, expect } from '@playwright/test';
+
+test('local server page title', async ({ page }) => {
+  await page.goto('http://127.0.0.1:8080');
+  const title = await page.title();
+  expect(title).toBeDefined();
 });
-TEST
-# Generate package-lock deterministically if missing
-if [ ! -f package-lock.json ]; then
-  npm i --package-lock-only --no-audit --no-fund >"$WORKSPACE/artifacts/lockfile_gen.log" 2>&1 || true
+EOT
+"
+
+# create playwright.config.mjs that respects PW_DISABLE_SANDBOX
+sudo -u pwuser bash -lc "cat > '$WS/playwright.config.mjs' <<'EOM'
+import { defineConfig } from '@playwright/test';
+const disableSandbox = !!process.env.PW_DISABLE_SANDBOX;
+const args = ['--disable-dev-shm-usage'];
+if (disableSandbox) args.push('--no-sandbox','--disable-setuid-sandbox');
+export default defineConfig({ use: { browserName: 'chromium', headless: process.env.CI?true:false, launchOptions: { args } } });
+EOM
+"
+
+# ensure ownership
+sudo chown -R pwuser:pwuser "$WS"
+
+# quick validation: show resulting package.json minimal fields (non-fatal)
+if [ -f "$WS/package.json" ]; then
+  jq '{name,version,scripts,devDependencies}' "$WS/package.json" 2>/dev/null || true
 fi

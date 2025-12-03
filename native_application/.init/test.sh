@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WORKSPACE="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
-cd "$WORKSPACE"
-ART="$WORKSPACE/artifacts"
-mkdir -p "$ART"
-# ensure headless env for this run
-export PLAYWRIGHT_HEADLESS=1
-export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$WORKSPACE/.local-browsers}"
-# run tests with local playwright binary, capture log and return exit code
-TEST_LOG="$ART/playwright_validation.log"
-./node_modules/.bin/playwright test --workers=1 --timeout=30000 >"$TEST_LOG" 2>&1 || TEST_RC=$?
-TEST_RC=${TEST_RC-0}
-echo "$TEST_RC"
-exit "$TEST_RC"
+WS="/home/kavia/workspace/code-generation/native-application-testing-with-playwright-43273/native_application"
+cd "$WS"
+# ensure XDG runtime dir exists and is owned by pwuser
+XDG_DIR="/tmp/xdg-runtime-pwuser"
+mkdir -p "$XDG_DIR"
+chown pwuser:pwuser "$XDG_DIR" || true
+# Ensure PLAYWRIGHT_BROWSERS_PATH default
+PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$WS/.cache/playwright-browsers}"
+mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"
+chown -R pwuser:pwuser "$PLAYWRIGHT_BROWSERS_PATH" || true
+# run tests as pwuser, preserve PATH to local node_modules
+set +e
+sudo -u pwuser bash -lc "cd '$WS' && PATH='$WS/node_modules/.bin:$HOME/.npm-global/bin:$PATH' PLAYWRIGHT_BROWSERS_PATH='$PLAYWRIGHT_BROWSERS_PATH' XDG_RUNTIME_DIR='$XDG_DIR' npx --yes playwright test --reporter=list"
+RC=$?
+set -e
+echo "$RC" > /tmp/playwright.test.rc
+if [ "$RC" -eq 0 ]; then
+  echo "TESTS: SUCCESS"
+else
+  echo "TESTS: FAILURE rc=$RC" >&2
+fi
+exit $RC
