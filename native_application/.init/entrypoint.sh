@@ -16,6 +16,9 @@ export HOME="/root"
 
 echo "Entrypoint: running as user: $(id -u) (uid) / $(id -un) (name) home=${HOME}"
 
+# Ensure this script is executable (defensive)
+chmod +x "/app/.init/entrypoint.sh" || true
+
 # If command given, exec it; else run validation or provide help
 if [[ $# -gt 0 ]]; then
   exec "$@"

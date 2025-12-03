@@ -31,4 +31,4 @@ Run examples:
 
 Notes:
 - No scripts, Dockerfile commands, or examples use sudo.
-- If an external CI tries to run sudo, either remove sudo usage or keep the default root user. Do not rely on a specific 'pwuser' at runtime—it's optional and may be selected via --user.
+- If an external CI tries to run sudo, remove sudo usage and keep the default root user. Do not rely on any non-root user at runtime.

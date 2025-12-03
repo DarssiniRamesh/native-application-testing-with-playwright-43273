@@ -9,18 +9,19 @@ if [[ -f ".init/native_playwright_env.sh" ]]; then
   source ".init/native_playwright_env.sh"
 fi
 
-# start http-server as pwuser in a new session, capture logs
+# start http-server as root in a new session, capture logs
 if ! grep -q '"start"' package.json 2>/dev/null; then
   echo "ERROR: package.json missing start script" >&2
   exit 25
 fi
-sudo -u pwuser bash -lc "cd '$WS' && mkdir -p /tmp && setsid npm run start > /tmp/http-server.log 2>&1 &"
+mkdir -p /tmp
+setsid npm run start > /tmp/http-server.log 2>&1 &
 
 # small delay to let process appear
 sleep 1
 
-# robustly find PID for http-server -p 8080 owned by pwuser
-SERVER_PID="$(pgrep -u pwuser -f "http-server -p 8080" | head -n1 || true)"
+# robustly find PID for http-server -p 8080
+SERVER_PID="$(pgrep -f "http-server -p 8080" | head -n1 || true)"
 if [ -z "${SERVER_PID:-}" ]; then
   echo "ERROR: failed to find http-server process" >&2
   tail -n 200 /tmp/http-server.log || true
@@ -30,12 +31,7 @@ if ! echo "$SERVER_PID" | grep -E '^[0-9]+$' >/dev/null; then
   echo "ERROR: invalid server pid: $SERVER_PID" >&2
   exit 31
 fi
-OWNER="$(ps -o user= -p "$SERVER_PID" | tr -d ' ')"
-if [ "$OWNER" != "pwuser" ]; then
-  echo "ERROR: server pid $SERVER_PID not owned by pwuser (owner=$OWNER)" >&2
-  exit 32
-fi
 
 # export PID for callers
 echo "$SERVER_PID" > /tmp/http-server.pid
-echo "STARTED: pid=$SERVER_PID"
+echo "STARTED: pid=$SERVER_PID (user=$(id -un))"

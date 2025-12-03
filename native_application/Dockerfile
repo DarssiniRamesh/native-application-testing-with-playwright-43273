@@ -105,8 +105,11 @@ else
   fi
 fi
 EOSH
-      chmod +x /app/.init/entrypoint.sh; \
     fi
+# Ensure entrypoint is executable if present
+RUN if [[ -f /app/.init/entrypoint.sh ]]; then chmod +x /app/.init/entrypoint.sh; fi
+# Force container to run as root
+USER root
 
 # Ensure working directory remains /app
 WORKDIR /app

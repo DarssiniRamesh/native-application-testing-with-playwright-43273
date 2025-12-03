@@ -3,6 +3,11 @@
 # Simple validation script to confirm environment is sane. No sudo.
 set -euo pipefail
 
+# Ensure entrypoint is executable (defense-in-depth when bind-mounting)
+if [[ -f "/app/.init/entrypoint.sh" ]]; then
+  chmod +x /app/.init/entrypoint.sh || true
+fi
+
 echo "[validation] User: $(id -un) (uid: $(id -u))"
 echo "[validation] Node: $(node -v), npm: $(npm -v)"
 echo "[validation] Playwright version: $(node -e "console.log(require('@playwright/test/package.json').version)")"
