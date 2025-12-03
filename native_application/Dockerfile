@@ -12,8 +12,19 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends \
     libgtk-3-0 libgbm1 libnss3 libx11-6 libxcomposite1 libxrandr2 libxss1 libasound2 curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user 'pwuser' with home dir and passwordless environment (no sudo used in image)
+# Use a fixed UID/GID for better cache/repro; 1001 is commonly free
+RUN groupadd -g 1001 pwuser && useradd -m -u 1001 -g 1001 -s /bin/bash pwuser
+
 # Create app directory
 WORKDIR /app
+
+# Prepare paths for playwright and npm cache; ensure ownership to pwuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.local-browsers \
+    NPM_CONFIG_CACHE=/home/pwuser/.npm
+
+RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" /home/pwuser/.npm /home/pwuser/.cache && \
+    chown -R pwuser:pwuser /app "${PLAYWRIGHT_BROWSERS_PATH}" /home/pwuser
 
 # Use bash for all subsequent RUN lines
 SHELL ["/bin/bash", "-c"]
@@ -45,12 +56,13 @@ RUN set -euo pipefail; \
       npm ci --no-audit --no-fund; \
     else \
       npm install --no-audit --no-fund; \
-    fi
+    fi; \
+    chown -R pwuser:pwuser /app/node_modules || true
 
 # Ensure playwright is available and install chromium to a writable path
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.local-browsers
 RUN mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}" && \
-    npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium
+    npx --yes playwright install chromium --with-deps || npx --yes playwright install chromium; \
+    chown -R pwuser:pwuser "${PLAYWRIGHT_BROWSERS_PATH}" || true
 
 # Provide a safe env script location system-wide (optional) to avoid sed errors in setups that edit /etc/profile.d
 RUN mkdir -p /etc/profile.d && \
@@ -62,6 +74,15 @@ RUN mkdir -p /etc/profile.d && \
 # Try repo-relative path first, then fallback to .
 COPY native-application-testing-with-playwright-43273/native_application/ /app/ 2>/dev/null || true
 COPY . /app/ 2>/dev/null || true
+
+# Fix ownership for pwuser after sources are copied
+RUN chown -R pwuser:pwuser /app || true
+
+# Switch to non-root user
+USER pwuser
+
+# Ensure working directory remains /app for pwuser
+WORKDIR /app
 
 # Source local env script at build-time where possible (no-op if missing)
 RUN if [[ -f ".init/native_playwright_env.sh" ]]; then echo "Sourcing local env script for verification"; bash -lc "source .init/native_playwright_env.sh >/dev/null 2>&1 || true"; fi

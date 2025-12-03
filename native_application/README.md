@@ -8,6 +8,7 @@ Key notes:
   - npm test -> playwright test
 - .init/native_playwright_env.sh sets safe environment variables and is sourced by the helper scripts.
 - Dockerfile installs minimal OS deps and Playwright Chromium to a writable path.
+- The image creates a non-root user 'pwuser' and runs the container under this user; no sudo is used or required.
 
 Build examples (both contexts are supported):
   # From repository root:
